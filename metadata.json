@@ -1,0 +1,6 @@
+{
+  "name": "AuraPulse Music Player",
+  "description": "Premium audiophile music player with live spectrum visualizer, 5-band equalizer, folder browser, queue manager, and pro theme customization.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
