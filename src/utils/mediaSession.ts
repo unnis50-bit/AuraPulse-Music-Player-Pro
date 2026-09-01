@@ -1,5 +1,4 @@
 import { Song } from '../types';
-import appIconImg from '../assets/images/aurapulse_app_icon_1788092851435.jpg';
 
 export function setupMediaSession(params: {
   currentSong: Song | null;
@@ -12,27 +11,39 @@ export function setupMediaSession(params: {
   onNext: () => void;
   onSeek: (time: number) => void;
 }) {
-  if (!('mediaSession' in navigator)) return;
+  if (typeof window === 'undefined' || !('mediaSession' in navigator)) return;
 
   const { currentSong, isPlaying, duration, currentTime, onPlay, onPause, onPrev, onNext, onSeek } = params;
 
   if (!currentSong) {
-    navigator.mediaSession.playbackState = 'none';
+    try {
+      navigator.mediaSession.playbackState = 'none';
+    } catch {
+      // Ignored
+    }
     return;
   }
 
-  // 1. Set playback state
-  navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+  // 1. Explicitly update playback state
+  try {
+    navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+  } catch {
+    // Ignored
+  }
 
-  // 2. Register Artwork with absolute URLs and bundled icons
-  const artwork = [
-    { src: '/favicon.svg', sizes: '512x512', type: 'image/svg+xml' },
-    { src: appIconImg, sizes: '512x512', type: 'image/jpeg' },
+  // 2. Register Artwork with absolute URLs (Required by Android Notification System)
+  const origin = window.location.origin || '';
+  const artwork: MediaImage[] = [
+    { src: `${origin}/favicon.svg`, sizes: '512x512', type: 'image/svg+xml' },
+    { src: `${origin}/icon.svg`, sizes: '512x512', type: 'image/svg+xml' },
   ];
 
-  if (currentSong.coverArt && currentSong.coverArt.startsWith('http')) {
+  if (currentSong.coverArt) {
+    const fullCover = currentSong.coverArt.startsWith('http')
+      ? currentSong.coverArt
+      : `${origin}${currentSong.coverArt.startsWith('/') ? '' : '/'}${currentSong.coverArt}`;
     artwork.unshift({
-      src: currentSong.coverArt,
+      src: fullCover,
       sizes: '512x512',
       type: 'image/png',
     });
@@ -50,7 +61,7 @@ export function setupMediaSession(params: {
     console.warn('MediaMetadata error:', err);
   }
 
-  // 4. Update position state
+  // 4. Update position state for Android notification seekbar
   try {
     if ('setPositionState' in navigator.mediaSession && duration > 0) {
       navigator.mediaSession.setPositionState({
@@ -63,18 +74,31 @@ export function setupMediaSession(params: {
     // Ignored
   }
 
-  // 5. Action Handlers for Lock screen & Notification Next, Prev, Play, Pause
-  try {
-    navigator.mediaSession.setActionHandler('play', onPlay);
-    navigator.mediaSession.setActionHandler('pause', onPause);
-    navigator.mediaSession.setActionHandler('previoustrack', onPrev);
-    navigator.mediaSession.setActionHandler('nexttrack', onNext);
-    navigator.mediaSession.setActionHandler('seekto', (details) => {
-      if (details.seekTime !== undefined && details.seekTime !== null) {
-        onSeek(details.seekTime);
-      }
-    });
-  } catch (e) {
-    console.warn('Error setting MediaSession handlers:', e);
-  }
+  // 5. Action Handlers for Lock screen & Notification Next, Prev, Play, Pause, Seek
+  const safeRegisterHandler = (action: MediaSessionAction, handler: MediaSessionActionHandler | null) => {
+    try {
+      navigator.mediaSession.setActionHandler(action, handler);
+    } catch {
+      // Action not supported on this platform
+    }
+  };
+
+  safeRegisterHandler('play', onPlay);
+  safeRegisterHandler('pause', onPause);
+  safeRegisterHandler('previoustrack', onPrev);
+  safeRegisterHandler('nexttrack', onNext);
+  safeRegisterHandler('seekto', (details) => {
+    if (details.seekTime !== undefined && details.seekTime !== null) {
+      onSeek(details.seekTime);
+    }
+  });
+  safeRegisterHandler('seekbackward', (details) => {
+    const skipTime = details.seekOffset || 10;
+    onSeek(Math.max(0, currentTime - skipTime));
+  });
+  safeRegisterHandler('seekforward', (details) => {
+    const skipTime = details.seekOffset || 10;
+    onSeek(Math.min(duration, currentTime + skipTime));
+  });
+  safeRegisterHandler('stop', onPause);
 }

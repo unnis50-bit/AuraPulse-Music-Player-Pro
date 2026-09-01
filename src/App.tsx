@@ -7,6 +7,7 @@ import {
   DEFAULT_THEMES,
   DEFAULT_EQ_PRESETS,
 } from './data/defaultLibrary';
+import { sampleSongs } from './data/sampleSongs';
 import { audioEngine } from './services/audioEngine';
 
 import { Header } from './components/Header';
@@ -26,7 +27,9 @@ import { FileUploadModal } from './components/FileUploadModal';
 import { ProPaymentModal } from './components/ProPaymentModal';
 import { SongContextMenu } from './components/SongContextMenu';
 import { PlaylistPickerModal } from './components/PlaylistPickerModal';
+import { OnlineSearchModal } from './components/OnlineSearchModal';
 import { setupMediaSession } from './utils/mediaSession';
+import { dbStorage } from './services/dbStorage';
 
 // Helper to normalize and deduplicate songs (prevents multiple duplicate tracks with same name)
 export function deduplicateSongs(songList: Song[]): Song[] {
@@ -62,22 +65,20 @@ export function deduplicateSongs(songList: Song[]): Song[] {
 }
 
 export default function App() {
-  // State Initialization from LocalStorage with automatic deduplication
+  // Always start with a completely empty library when cleared
   const [songs, setSongs] = useState<Song[]>(() => {
     try {
+      const isCleared = localStorage.getItem('aurapulse_player_cleared_all_v3') === 'true';
+      if (!isCleared) {
+        localStorage.removeItem('aurapulse_songs');
+        localStorage.setItem('aurapulse_player_cleared_all_v3', 'true');
+        return [];
+      }
       const saved = localStorage.getItem('aurapulse_songs');
-      const parsed: Song[] = saved ? JSON.parse(saved) : INITIAL_SONGS;
-      // Ensure songs have working audioUrl for media notification
-      const hydrated = parsed.map((s) => {
-        const initial = INITIAL_SONGS.find((init) => init.id === s.id);
-        if (initial?.audioUrl && !s.audioUrl) {
-          return { ...s, audioUrl: initial.audioUrl, duration: initial.duration || s.duration };
-        }
-        return s;
-      });
-      return deduplicateSongs(hydrated);
+      const parsed: Song[] = saved ? JSON.parse(saved) : [];
+      return deduplicateSongs(parsed);
     } catch {
-      return deduplicateSongs(INITIAL_SONGS);
+      return [];
     }
   });
 
@@ -119,6 +120,7 @@ export default function App() {
   const [isSleepTimerOpen, setIsSleepTimerOpen] = useState(false);
   const [isQueueOpen, setIsQueueOpen] = useState(false);
   const [isFileUploadOpen, setIsFileUploadOpen] = useState(false);
+  const [isOnlineSearchOpen, setIsOnlineSearchOpen] = useState(false);
   const [isProPaymentOpen, setIsProPaymentOpen] = useState(false);
   const [proFeatureTrigger, setProFeatureTrigger] = useState<'equalizer' | 'spectrum' | 'general'>('general');
   const [isProUnlocked, setIsProUnlocked] = useState<boolean>(() => {
@@ -195,9 +197,47 @@ export default function App() {
     return list;
   }, [songs]);
 
-  // Persist storage changes
+  // Load from IndexedDB on startup (Fallback to sample songs so app is never blank or stuck)
   useEffect(() => {
-    localStorage.setItem('aurapulse_songs', JSON.stringify(songs));
+    let isMounted = true;
+    const initDatabase = async () => {
+      try {
+        const stored = await dbStorage.loadAllSongs();
+        if (!isMounted) return;
+        if (stored && stored.length > 0) {
+          const deduplicated = deduplicateSongs(stored);
+          setSongs(deduplicated);
+          setQueue(deduplicated);
+          setCurrentSong((prev) => prev || deduplicated[0] || null);
+        } else {
+          // If no user songs saved yet, load default demo tracks so player works instantly
+          const defaults = deduplicateSongs(sampleSongs);
+          setSongs(defaults);
+          setQueue(defaults);
+          setCurrentSong(defaults[0] || null);
+        }
+      } catch (err) {
+        console.warn('IndexedDB load error, fallback to defaults:', err);
+        if (isMounted) {
+          setSongs(sampleSongs);
+          setQueue(sampleSongs);
+          setCurrentSong(sampleSongs[0] || null);
+        }
+      }
+    };
+    initDatabase();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Persist storage changes (Both localStorage & IndexedDB metadata cache)
+  useEffect(() => {
+    try {
+      localStorage.setItem('aurapulse_songs', JSON.stringify(songs));
+    } catch {
+      // Ignored
+    }
   }, [songs]);
 
   useEffect(() => {
@@ -580,19 +620,21 @@ export default function App() {
     });
   };
 
-  const handleDeleteSong = (songId: string) => {
+  const handleDeleteSong = async (songId: string) => {
     setSongs((prev) => prev.filter((s) => s.id !== songId));
     setQueue((prev) => prev.filter((s) => s.id !== songId));
+    await dbStorage.deleteSong(songId);
     if (currentSong?.id === songId) {
       handleNext();
     }
   };
 
-  // Import local audio files with automatic deduplication
-  const handleImportSongs = (newSongs: Song[]) => {
+  // Import local audio files with permanent IndexedDB blob storage
+  const handleImportSongs = async (newSongs: Song[], blobsMap?: Map<string, Blob>) => {
     const combined = deduplicateSongs([...newSongs, ...songs]);
     setSongs(combined);
     setQueue(combined);
+    await dbStorage.saveSongsWithBlobs(combined, blobsMap);
     if (newSongs.length > 0) {
       handlePlaySong(newSongs[0], combined);
     }
@@ -636,6 +678,7 @@ export default function App() {
         onOpenThemeModal={() => setIsThemeModalOpen(true)}
         onOpenSleepTimer={() => setIsSleepTimerOpen(true)}
         onOpenFileUpload={() => setIsFileUploadOpen(true)}
+        onOpenOnlineSearch={() => setIsOnlineSearchOpen(true)}
         theme={theme}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
@@ -672,7 +715,11 @@ export default function App() {
             onOpenSongMenu={handleOpenSongMenu}
             onRemoveSampleSongs={handleRemoveSampleSongs}
             onCleanDuplicates={handleCleanDuplicates}
+            onOpenFileUpload={() => setIsFileUploadOpen(true)}
+            onImportSongs={handleImportSongs}
+            onOpenOnlineSearch={() => setIsOnlineSearchOpen(true)}
             searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
             theme={theme}
           />
         )}
@@ -866,6 +913,23 @@ export default function App() {
         onAddSongToPlaylist={handleAddSongToPlaylist}
         onCreateAndAdd={handleCreateAndAdd}
         theme={theme}
+      />
+
+      {/* Online Search & Stream Modal */}
+      <OnlineSearchModal
+        isOpen={isOnlineSearchOpen}
+        onClose={() => setIsOnlineSearchOpen(false)}
+        onPlaySong={(song) => {
+          handlePlaySong(song);
+          setIsOnlineSearchOpen(false);
+        }}
+        onAddSongToLibrary={(song) => {
+          handleImportSongs([song]);
+        }}
+        currentSong={currentSong}
+        isPlaying={isPlaying}
+        theme={theme}
+        existingSongIds={new Set(songs.map((s) => s.id))}
       />
     </div>
   );

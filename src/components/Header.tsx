@@ -29,6 +29,7 @@ interface HeaderProps {
   onOpenThemeModal: () => void;
   onOpenSleepTimer: () => void;
   onOpenFileUpload: () => void;
+  onOpenOnlineSearch?: () => void;
   theme: ThemeConfig;
   searchQuery: string;
   onSearchChange: (q: string) => void;
@@ -46,6 +47,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenThemeModal,
   onOpenSleepTimer,
   onOpenFileUpload,
+  onOpenOnlineSearch,
   theme,
   searchQuery,
   onSearchChange,
@@ -126,8 +128,8 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
 
-        {/* Right Side - PRO 299 Button Only */}
-        <div className="flex items-center">
+        {/* Right Side - PRO 299 Button */}
+        <div className="flex items-center gap-2">
           {!isProUnlocked ? (
             <button
               id="header-pro-unlock-btn"

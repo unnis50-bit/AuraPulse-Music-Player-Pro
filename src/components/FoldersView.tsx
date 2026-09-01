@@ -225,25 +225,10 @@ export const FoldersView: React.FC<FoldersViewProps> = ({
   }
 
   // Root Folders List View (Mirrors Pulsar's exact Folders tab view)
+  const totalSongsCount = folders.reduce((sum, f) => sum + f.songCount, 0);
+
   return (
     <div className="pb-32 px-4 pt-3 max-w-5xl mx-auto">
-      {/* Storage Banner & Auto Scan Button */}
-      <div className="flex items-center justify-between mb-3 px-2 text-xs text-neutral-400">
-        <div className="flex items-center gap-2">
-          <HardDrive className="w-4 h-4 text-emerald-400" />
-          <span>Internal Storage (/storage/emulated/0)</span>
-        </div>
-        <button
-          id="folders-scan-btn"
-          onClick={onOpenFileUpload}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold transition-all border border-white/10 shadow-sm"
-          style={{ color: theme.accent }}
-        >
-          <FolderPlus className="w-4 h-4" />
-          <span>Auto-Scan & Add Folders</span>
-        </button>
-      </div>
-
       {activeSearch && (
         <div className="mb-3 px-2 text-xs text-neutral-400">
           Showing {filteredFolders.length} folders matching "{activeSearch}"

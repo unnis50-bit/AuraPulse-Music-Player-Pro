@@ -1,15 +1,25 @@
 {
-  "short_name": "AuraPulse",
   "name": "AuraPulse Music Player",
+  "short_name": "AuraPulse",
+  "description": "High-fidelity local and stream music player with hardware equalizer and dynamic spectrum visualizers.",
+  "start_url": "/",
+  "id": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#090b0e",
+  "theme_color": "#10b981",
   "icons": [
     {
       "src": "/favicon.svg",
+      "sizes": "192x192 512x512 any",
       "type": "image/svg+xml",
-      "sizes": "512x512"
+      "purpose": "any maskable"
     }
   ],
-  "start_url": "/",
-  "background_color": "#090b0e",
-  "theme_color": "#10b981",
-  "display": "standalone"
+  "categories": [
+    "music",
+    "entertainment",
+    "audio"
+  ]
 }

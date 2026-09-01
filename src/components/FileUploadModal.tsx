@@ -1,11 +1,20 @@
-import React, { useRef, useState } from 'react';
-import { Upload, X, FileAudio, Check, FolderUp, HardDrive, RefreshCw, FolderSearch, AlertCircle } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import {
+  X,
+  Sparkles,
+  Check,
+  FolderSearch,
+  FolderOpen,
+  FileMusic,
+  ShieldCheck,
+  Search,
+} from 'lucide-react';
 import { Song, ThemeConfig } from '../types';
 
 interface FileUploadModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onImportSongs: (newSongs: Song[]) => void;
+  onImportSongs: (newSongs: Song[], blobsMap?: Map<string, Blob>) => void;
   theme: ThemeConfig;
 }
 
@@ -15,16 +24,15 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
   onImportSongs,
   theme,
 }) => {
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const folderInputRef = useRef<HTMLInputElement | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState<string>('');
   const [importedCount, setImportedCount] = useState<number | null>(null);
 
+  const autoFileInputRef = useRef<HTMLInputElement>(null);
+  const manualFileInputRef = useRef<HTMLInputElement>(null);
+
   if (!isOpen) return null;
 
-  // Helper to accurately extract audio duration using Audio object
   const getAudioDuration = (url: string): Promise<number> => {
     return new Promise((resolve) => {
       const audio = new Audio();
@@ -45,7 +53,6 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
       };
       audio.addEventListener('loadedmetadata', onLoaded);
       audio.addEventListener('error', onError);
-      // Timeout fallback after 1.5s
       setTimeout(() => {
         cleanup();
         resolve(210);
@@ -53,44 +60,37 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
     });
   };
 
-  const handleFiles = async (files: FileList | null) => {
-    if (!files || files.length === 0) return;
-
-    setIsScanning(true);
-    setScanProgress('Indexing audio files...');
-
-    const gradients = [
-      'from-rose-600 via-pink-700 to-purple-950',
-      'from-emerald-600 via-teal-700 to-slate-900',
-      'from-amber-600 via-orange-700 to-neutral-900',
-      'from-indigo-600 via-blue-700 to-slate-950',
-      'from-cyan-600 via-sky-800 to-zinc-950',
-      'from-violet-600 via-purple-700 to-stone-900',
-      'from-fuchsia-600 via-rose-700 to-slate-950',
-    ];
-
-    const fileList = Array.from(files).filter((file) => {
+  const processFiles = async (files: FileList | File[]) => {
+    const fileList: File[] = Array.from(files).filter((file: File) => {
       const ext = file.name.split('.').pop()?.toLowerCase() || '';
       return (
-        ['mp3', 'flac', 'wav', 'aac', 'm4a', 'ogg', 'opus', 'wma', 'weba', 'mid'].includes(ext) ||
+        ['mp3', 'flac', 'wav', 'aac', 'm4a', 'ogg', 'opus', 'wma', 'weba'].includes(ext) ||
         file.type.startsWith('audio/')
       );
     });
 
     if (fileList.length === 0) {
-      setIsScanning(false);
-      setScanProgress('No valid audio files found in selection.');
-      setTimeout(() => setScanProgress(''), 3000);
+      alert('No audio files detected. Please pick MP3, M4A, WAV, or AAC audio files.');
       return;
     }
 
+    setIsScanning(true);
     const parsedSongs: Song[] = [];
+    const blobsMap = new Map<string, Blob>();
+
+    const gradients = [
+      'from-emerald-600 via-teal-700 to-slate-900',
+      'from-rose-600 via-pink-700 to-purple-950',
+      'from-amber-600 via-orange-700 to-neutral-900',
+      'from-indigo-600 via-blue-700 to-slate-950',
+      'from-cyan-600 via-sky-800 to-zinc-950',
+      'from-violet-600 via-purple-700 to-stone-900',
+    ];
 
     for (let idx = 0; idx < fileList.length; idx++) {
       const file = fileList[idx];
-      setScanProgress(`Processing ${idx + 1} of ${fileList.length}: ${file.name}`);
+      setScanProgress(`Adding ${idx + 1} of ${fileList.length}: ${file.name}`);
 
-      // Clean filename
       const fullName = file.name.replace(/\.[^/.]+$/, '');
       const parts = fullName.split(' - ');
       const artist = parts.length > 1 ? parts[0].trim() : 'Local Artist';
@@ -100,41 +100,27 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
       const ext = file.name.split('.').pop()?.toUpperCase() || 'AUDIO';
       const formatStr = `${ext} ${(file.size / (1024 * 1024)).toFixed(1)}MB`;
 
-      // Extract folder name from webkitRelativePath if available, else infer from filename or path
-      let folderName = 'Music';
-      let folderPath = `/storage/emulated/0/Music/${file.name}`;
-      
+      let folderName = 'Download';
       if (file.webkitRelativePath) {
         const pathParts = file.webkitRelativePath.split('/');
         if (pathParts.length > 1) {
-          folderName = pathParts[pathParts.length - 2] || pathParts[0] || 'Music';
-          folderPath = `/storage/emulated/0/${file.webkitRelativePath}`;
-        }
-      } else {
-        // Infer folder based on keywords or default to Download / Device Audio
-        if (file.name.toLowerCase().includes('whatsapp')) {
-          folderName = 'WhatsApp Audio';
-          folderPath = `/storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Audio/${file.name}`;
-        } else if (file.name.toLowerCase().includes('record') || file.name.toLowerCase().includes('voice')) {
-          folderName = 'Recordings';
-          folderPath = `/storage/emulated/0/Recordings/${file.name}`;
-        } else {
-          folderName = 'Download';
-          folderPath = `/storage/emulated/0/Download/${file.name}`;
+          folderName = pathParts[pathParts.length - 2] || pathParts[0] || 'Download';
         }
       }
 
-      // Fast async duration estimation
       const songDuration = await getAudioDuration(audioUrl);
+      const songId = `user-track-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 7)}`;
+
+      blobsMap.set(songId, file);
 
       parsedSongs.push({
-        id: `user-track-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 5)}`,
+        id: songId,
         title: title || file.name,
         artist: artist || 'Local Artist',
         album: folderName,
         duration: songDuration,
         folder: folderName,
-        filePath: folderPath,
+        filePath: `/storage/emulated/0/${folderName}/${file.name}`,
         format: formatStr,
         bitrate: '320 kbps',
         year: new Date().getFullYear(),
@@ -147,107 +133,102 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
       });
     }
 
-    onImportSongs(parsedSongs);
+    onImportSongs(parsedSongs, blobsMap);
     setIsScanning(false);
     setScanProgress('');
     setImportedCount(parsedSongs.length);
     setTimeout(() => {
       onClose();
+      setImportedCount(null);
     }, 1200);
   };
 
-  // Modern File System Directory Access (if supported by browser)
-  const handleModernDirectoryScan = async () => {
+  // Button 1: Automatic Search
+  const handleAutoSearch = async () => {
     try {
       if ('showDirectoryPicker' in window) {
         // @ts-expect-error - modern File System Access API
         const dirHandle = await window.showDirectoryPicker();
         setIsScanning(true);
-        setScanProgress(`Scanning folder "${dirHandle.name}"...`);
+        setScanProgress(`Scanning "${dirHandle.name}" folder...`);
 
         const collectedFiles: File[] = [];
-        // Recursive directory reader
-        const readDir = async (handle: any, path = '') => {
+        const readDir = async (handle: any) => {
           for await (const entry of handle.values()) {
             if (entry.kind === 'file') {
               const file = await entry.getFile();
               const ext = file.name.split('.').pop()?.toLowerCase() || '';
-              if (
-                ['mp3', 'flac', 'wav', 'aac', 'm4a', 'ogg', 'opus', 'wma'].includes(ext) ||
-                file.type.startsWith('audio/')
-              ) {
-                // Attach custom relative path
-                Object.defineProperty(file, 'webkitRelativePath', {
-                  value: `${path ? path + '/' : ''}${handle.name}/${file.name}`,
-                  writable: false,
-                });
+              if (['mp3', 'flac', 'wav', 'aac', 'm4a', 'ogg', 'opus', 'wma'].includes(ext)) {
                 collectedFiles.push(file);
               }
             } else if (entry.kind === 'directory') {
-              await readDir(entry, `${path ? path + '/' : ''}${handle.name}`);
+              await readDir(entry);
             }
           }
         };
 
         await readDir(dirHandle);
-
         if (collectedFiles.length > 0) {
-          const dataTransfer = new DataTransfer();
-          collectedFiles.forEach((f) => dataTransfer.items.add(f));
-          await handleFiles(dataTransfer.files);
-        } else {
-          setIsScanning(false);
-          setScanProgress('No audio files found in chosen folder.');
-          setTimeout(() => setScanProgress(''), 3000);
+          await processFiles(collectedFiles);
+          return;
         }
-      } else {
-        // Fallback to input ref
-        folderInputRef.current?.click();
       }
-    } catch (err: any) {
-      if (err.name !== 'AbortError') {
-        console.warn('Directory Picker error, falling back to input:', err);
-        folderInputRef.current?.click();
-      }
-      setIsScanning(false);
+    } catch {
+      // User cancelled or fallback
+    }
+
+    // Fallback to file picker
+    if (autoFileInputRef.current) {
+      autoFileInputRef.current.click();
     }
   };
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    handleFiles(e.dataTransfer.files);
+  // Button 2: Manual Search
+  const handleManualSearch = () => {
+    if (manualFileInputRef.current) {
+      manualFileInputRef.current.click();
+    }
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in">
+      {/* Hidden File Pickers */}
+      <input
+        ref={autoFileInputRef}
+        type="file"
+        multiple
+        accept="audio/*,.mp3,.flac,.wav,.aac,.m4a,.ogg,.opus"
+        className="hidden"
+        onChange={(e) => e.target.files && processFiles(e.target.files)}
+      />
+      <input
+        ref={manualFileInputRef}
+        type="file"
+        multiple
+        accept="audio/*,.mp3,.flac,.wav,.aac,.m4a,.ogg,.opus"
+        className="hidden"
+        onChange={(e) => e.target.files && processFiles(e.target.files)}
+      />
+
       <div
-        id="aurapulse-file-upload-modal"
-        className="w-full max-w-md rounded-3xl p-5 sm:p-6 shadow-[0_24px_70px_rgba(0,0,0,0.9)] border border-white/15 backdrop-blur-3xl"
-        style={{ backgroundColor: `${theme.surfaceDark}f2` }}
+        id="aurapulse-search-modal"
+        className="w-full max-w-md rounded-3xl p-6 shadow-2xl border border-white/15 backdrop-blur-3xl"
+        style={{ backgroundColor: `${theme.surfaceDark}f5` }}
       >
         {/* Header */}
-        <div className="flex items-center justify-between mb-4 pb-3 border-b border-white/10">
+        <div className="flex items-center justify-between mb-5 pb-3 border-b border-white/10">
           <div className="flex items-center gap-3">
             <div
-              className="w-9 h-9 rounded-xl flex items-center justify-center shadow-md border border-white/10"
+              className="w-10 h-10 rounded-2xl flex items-center justify-center shadow-md border border-white/10"
               style={{ backgroundColor: `${theme.accent}20` }}
             >
               <FolderSearch className="w-5 h-5" style={{ color: theme.accent }} />
             </div>
             <div>
-              <div className="flex items-center gap-2 leading-none">
-                <h3 className="text-base font-extrabold text-white font-brand-luxury uppercase tracking-wider">
-                  Scan & Import Audio
-                </h3>
-                <span
-                  className="text-[9px] uppercase font-mono-numbers px-1.5 py-0.5 rounded-md font-bold tracking-wider border border-white/10"
-                  style={{ backgroundColor: theme.badgeBg, color: theme.accent }}
-                >
-                  HI-RES
-                </span>
-              </div>
-              <p className="text-xs text-neutral-400 font-medium mt-1">Scan device folders & add songs to library</p>
+              <h3 className="text-base font-extrabold text-white uppercase tracking-wider">
+                Add Songs to Player
+              </h3>
+              <p className="text-xs text-neutral-400 font-medium">Select search method</p>
             </div>
           </div>
 
@@ -270,11 +251,9 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
               <Check className="w-7 h-7 stroke-[3]" />
             </div>
             <h4 className="text-base font-extrabold text-white">
-              Successfully Imported {importedCount} {importedCount === 1 ? 'Track' : 'Tracks'}!
+              Successfully Added {importedCount} {importedCount === 1 ? 'Track' : 'Tracks'}!
             </h4>
-            <p className="text-xs text-neutral-400">
-              Folders categorized and saved to your offline library
-            </p>
+            <p className="text-xs text-neutral-400">Saved to your offline music library</p>
           </div>
         ) : isScanning ? (
           <div className="py-10 text-center space-y-4">
@@ -283,106 +262,65 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
               style={{ borderColor: theme.accent, borderTopColor: 'transparent' }}
             />
             <div>
-              <p className="text-sm font-bold text-white">Scanning Music Library...</p>
+              <p className="text-sm font-bold text-white">Searching Songs...</p>
               <p className="text-xs text-neutral-400 font-mono-numbers mt-1 truncate max-w-xs mx-auto">
-                {scanProgress || 'Analyzing audio metadata & organizing folders...'}
+                {scanProgress || 'Analyzing audio files & adding to library...'}
               </p>
             </div>
           </div>
         ) : (
-          <div className="space-y-3.5">
-            {/* Direct Quick Scan Buttons */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              {/* Scan Entire Folder / Directory */}
-              <button
-                id="browse-device-folders-btn"
-                onClick={handleModernDirectoryScan}
-                className="p-3.5 rounded-2xl text-left border transition-all relative overflow-hidden group border-white/10 hover:border-white/25 bg-white/[0.04] hover:bg-white/[0.08]"
-              >
-                <div className="flex items-center gap-3">
-                  <div
-                    className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm"
-                    style={{ backgroundColor: `${theme.accent}20`, color: theme.accent }}
-                  >
-                    <FolderUp className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs sm:text-sm font-bold text-white">Scan Music Folder</h4>
-                    <p className="text-[11px] text-neutral-400 mt-0.5">Select full folder or directory</p>
-                  </div>
-                </div>
-              </button>
-
-              {/* Select Audio Files */}
-              <button
-                id="browse-device-files-btn"
-                onClick={() => fileInputRef.current?.click()}
-                className="p-3.5 rounded-2xl text-left border transition-all relative overflow-hidden group border-white/10 hover:border-white/25 bg-white/[0.04] hover:bg-white/[0.08]"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-sky-500/20 text-sky-400 flex items-center justify-center shrink-0 shadow-sm">
-                    <FileAudio className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs sm:text-sm font-bold text-white">Select Audio Files</h4>
-                    <p className="text-[11px] text-neutral-400 mt-0.5">Pick MP3, FLAC, WAV, AAC</p>
-                  </div>
-                </div>
-              </button>
-            </div>
-
-            {/* Drag and Drop Zone */}
-            <div
-              onDragOver={(e) => {
-                e.preventDefault();
-                setIsDragging(true);
-              }}
-              onDragLeave={() => setIsDragging(false)}
-              onDrop={handleDrop}
-              onClick={() => fileInputRef.current?.click()}
-              className={`p-5 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center text-center cursor-pointer transition-all ${
-                isDragging
-                  ? 'border-emerald-400 bg-emerald-500/10 scale-102'
-                  : 'border-white/15 hover:border-white/30 bg-white/[0.02] hover:bg-white/5'
-              }`}
+          <div className="space-y-3">
+            {/* BUTTON 1: AUTOMATIC SEARCH */}
+            <button
+              id="modal-auto-search-btn"
+              onClick={handleAutoSearch}
+              className="w-full p-4 rounded-2xl text-left border transition-all relative overflow-hidden group border-emerald-500/40 hover:border-emerald-400 bg-gradient-to-r from-emerald-950/50 via-neutral-900/60 to-emerald-950/30 hover:bg-emerald-900/20 active:scale-[0.99] shadow-lg cursor-pointer"
             >
-              <Upload className="w-6 h-6 text-neutral-400 mb-1.5" />
-              <p className="text-xs font-semibold text-white">Or Drag & Drop Audio Files Here</p>
-              <p className="text-[10px] text-neutral-400 font-mono-numbers mt-0.5">
-                MP3 • FLAC • WAV • AAC • M4A • OGG
-              </p>
-
-              {/* Hidden Standard File Input */}
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                accept="audio/*,.mp3,.flac,.wav,.aac,.m4a,.ogg,.opus,.wma"
-                className="hidden"
-                onChange={(e) => handleFiles(e.target.files)}
-              />
-
-              {/* Hidden Directory Picker input for fallback */}
-              <input
-                ref={folderInputRef}
-                type="file"
-                multiple
-                {...({ webkitdirectory: 'true', directory: '' } as React.InputHTMLAttributes<HTMLInputElement>)}
-                className="hidden"
-                onChange={(e) => handleFiles(e.target.files)}
-              />
-            </div>
-
-            {scanProgress && (
-              <div className="flex items-center gap-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{scanProgress}</span>
+              <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 shadow-sm border border-emerald-500/30 group-hover:scale-105 transition-transform">
+                  <ShieldCheck className="w-6 h-6" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-sm font-extrabold text-white group-hover:text-emerald-300 transition-colors">
+                      1. Automatic Search
+                    </h4>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      Recommended
+                    </span>
+                  </div>
+                  <p className="text-xs text-neutral-300 mt-1 leading-snug">
+                    Allow storage permission and automatically scan all device songs
+                  </p>
+                </div>
               </div>
-            )}
+            </button>
+
+            {/* BUTTON 2: MANUAL SEARCH */}
+            <button
+              id="modal-manual-search-btn"
+              onClick={handleManualSearch}
+              className="w-full p-4 rounded-2xl text-left border transition-all relative overflow-hidden group border-white/10 hover:border-white/25 bg-white/[0.04] hover:bg-white/[0.08] active:scale-[0.99] shadow-sm cursor-pointer"
+            >
+              <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 rounded-xl bg-sky-500/20 text-sky-400 flex items-center justify-center shrink-0 shadow-sm border border-sky-500/30 group-hover:scale-105 transition-transform">
+                  <FolderOpen className="w-6 h-6" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-sm font-extrabold text-white group-hover:text-sky-300 transition-colors">
+                      2. Manual Search
+                    </h4>
+                  </div>
+                  <p className="text-xs text-neutral-400 mt-1 leading-snug">
+                    Manually choose specific audio files or folders from phone
+                  </p>
+                </div>
+              </div>
+            </button>
           </div>
         )}
       </div>
     </div>
   );
 };
-

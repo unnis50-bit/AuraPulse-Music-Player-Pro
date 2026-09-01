@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   Music,
   Play,
@@ -7,8 +7,11 @@ import {
   ArrowUpDown,
   Heart,
   Headphones,
-  SlidersHorizontal,
-  Flame,
+  Search,
+  X,
+  ShieldCheck,
+  CheckCircle2,
+  FolderOpen,
 } from 'lucide-react';
 import { Song, ThemeConfig } from '../types';
 
@@ -21,7 +24,11 @@ interface SongsListProps {
   onOpenSongMenu: (song: Song, e: React.MouseEvent) => void;
   onRemoveSampleSongs?: () => void;
   onCleanDuplicates?: () => void;
+  onOpenFileUpload?: () => void;
+  onImportSongs?: (newSongs: Song[], blobsMap?: Map<string, Blob>) => void;
+  onOpenOnlineSearch?: () => void;
   searchQuery: string;
+  onSearchChange?: (q: string) => void;
   theme: ThemeConfig;
 }
 
@@ -34,13 +41,178 @@ export const SongsList: React.FC<SongsListProps> = ({
   onPlaySong,
   onToggleFavorite,
   onOpenSongMenu,
-  onRemoveSampleSongs,
-  onCleanDuplicates,
+  onImportSongs,
+  onOpenFileUpload,
   searchQuery,
+  onSearchChange,
   theme,
 }) => {
   const [sortBy, setSortBy] = useState<SortOption>('default');
   const [showSortDropdown, setShowSortDropdown] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+
+  const autoFileInputRef = useRef<HTMLInputElement | null>(null);
+  const manualFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Helper to extract audio duration
+  const getAudioDuration = (url: string): Promise<number> => {
+    return new Promise((resolve) => {
+      const audio = new Audio();
+      audio.src = url;
+      audio.preload = 'metadata';
+      const onLoaded = () => {
+        const dur = Math.round(audio.duration);
+        cleanup();
+        resolve(isNaN(dur) || dur <= 0 ? 210 : dur);
+      };
+      const onError = () => {
+        cleanup();
+        resolve(210);
+      };
+      const cleanup = () => {
+        audio.removeEventListener('loadedmetadata', onLoaded);
+        audio.removeEventListener('error', onError);
+      };
+      audio.addEventListener('loadedmetadata', onLoaded);
+      audio.addEventListener('error', onError);
+      setTimeout(() => {
+        cleanup();
+        resolve(210);
+      }, 1500);
+    });
+  };
+
+  // Process selected audio files
+  const processImportFiles = async (files: FileList | File[]) => {
+    const fileList: File[] = (Array.from(files) as File[]).filter((file: File) => {
+      const ext = file.name.split('.').pop()?.toLowerCase() || '';
+      return (
+        ['mp3', 'flac', 'wav', 'aac', 'm4a', 'ogg', 'opus', 'wma', 'weba'].includes(ext) ||
+        file.type.startsWith('audio/')
+      );
+    });
+
+    if (fileList.length === 0) {
+      setIsProcessing(false);
+      setStatusMessage('No valid audio files found.');
+      setTimeout(() => setStatusMessage(null), 2500);
+      return;
+    }
+
+    setIsProcessing(true);
+    setStatusMessage(`Scanning ${fileList.length} audio tracks...`);
+
+    const gradients = [
+      'from-emerald-600 via-teal-700 to-slate-900',
+      'from-rose-600 via-pink-700 to-purple-950',
+      'from-amber-600 via-orange-700 to-neutral-900',
+      'from-indigo-600 via-blue-700 to-slate-950',
+      'from-cyan-600 via-sky-800 to-zinc-950',
+      'from-violet-600 via-purple-700 to-stone-900',
+    ];
+
+    const parsedSongs: Song[] = [];
+    const blobsMap = new Map<string, Blob>();
+
+    for (let idx = 0; idx < fileList.length; idx++) {
+      const file = fileList[idx];
+      const fullName = file.name.replace(/\.[^/.]+$/, '');
+      const parts = fullName.split(' - ');
+      const artist = parts.length > 1 ? parts[0].trim() : 'Local Artist';
+      const title = parts.length > 1 ? parts.slice(1).join(' - ').trim() : fullName;
+
+      const audioUrl = URL.createObjectURL(file);
+      const ext = file.name.split('.').pop()?.toUpperCase() || 'AUDIO';
+      const duration = await getAudioDuration(audioUrl);
+
+      let folderName = 'Download';
+      if ((file as any).webkitRelativePath) {
+        const segments = (file as any).webkitRelativePath.split('/');
+        if (segments.length > 1) {
+          folderName = segments[segments.length - 2];
+        }
+      }
+
+      const songId = `user-track-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 7)}`;
+      parsedSongs.push({
+        id: songId,
+        title,
+        artist,
+        album: folderName,
+        duration,
+        format: ext,
+        bitrate: ext === 'FLAC' || ext === 'WAV' ? '1411 kbps' : '320 kbps',
+        audioUrl,
+        isFavorite: false,
+        folder: folderName,
+        filePath: `/storage/emulated/0/${folderName}/${file.name}`,
+        dateAdded: Date.now(),
+        coverGradient: gradients[idx % gradients.length],
+      });
+
+      blobsMap.set(songId, file);
+    }
+
+    if (onImportSongs) {
+      onImportSongs(parsedSongs, blobsMap);
+    } else if (onOpenFileUpload) {
+      onOpenFileUpload();
+    }
+
+    setIsProcessing(false);
+    setStatusMessage(`✓ Added ${parsedSongs.length} songs to library!`);
+    setTimeout(() => setStatusMessage(null), 3000);
+
+    if (autoFileInputRef.current) autoFileInputRef.current.value = '';
+    if (manualFileInputRef.current) manualFileInputRef.current.value = '';
+  };
+
+  // Button 1: Automatic Search
+  const handleAutoSearch = async () => {
+    try {
+      if ('showDirectoryPicker' in window) {
+        // @ts-expect-error - Modern Directory Picker
+        const dirHandle = await window.showDirectoryPicker();
+        setIsProcessing(true);
+        setStatusMessage(`Scanning "${dirHandle.name}" folder...`);
+
+        const collectedFiles: File[] = [];
+        const readDir = async (handle: any) => {
+          for await (const entry of handle.values()) {
+            if (entry.kind === 'file') {
+              const file = await entry.getFile();
+              const ext = file.name.split('.').pop()?.toLowerCase() || '';
+              if (['mp3', 'flac', 'wav', 'aac', 'm4a', 'ogg', 'opus', 'wma'].includes(ext)) {
+                collectedFiles.push(file);
+              }
+            } else if (entry.kind === 'directory') {
+              await readDir(entry);
+            }
+          }
+        };
+
+        await readDir(dirHandle);
+        if (collectedFiles.length > 0) {
+          await processImportFiles(collectedFiles);
+          return;
+        }
+      }
+    } catch {
+      // User cancelled or fallback to native file picker
+    }
+
+    if (autoFileInputRef.current) {
+      autoFileInputRef.current.click();
+    }
+  };
+
+  // Button 2: Manual Search
+  const handleManualSearch = () => {
+    if (manualFileInputRef.current) {
+      manualFileInputRef.current.click();
+    }
+  };
 
   const filteredAndSortedSongs = useMemo(() => {
     let list = [...songs];
@@ -83,6 +255,34 @@ export const SongsList: React.FC<SongsListProps> = ({
 
   return (
     <div className="pb-32 px-4 pt-3 max-w-5xl mx-auto">
+      {/* Hidden File Pickers for 1-Tap Trigger */}
+      <input
+        ref={autoFileInputRef}
+        type="file"
+        multiple
+        accept="audio/*,.mp3,.m4a,.wav,.flac,.aac,.ogg,.opus,.wma"
+        onChange={(e) => e.target.files && processImportFiles(e.target.files)}
+        className="hidden"
+        id="native-auto-search-input"
+      />
+      <input
+        ref={manualFileInputRef}
+        type="file"
+        multiple
+        accept="audio/*,.mp3,.m4a,.wav,.flac,.aac,.ogg,.opus,.wma"
+        onChange={(e) => e.target.files && processImportFiles(e.target.files)}
+        className="hidden"
+        id="native-manual-search-input"
+      />
+
+      {/* Status / Success Toast */}
+      {statusMessage && (
+        <div className="mb-3 px-3.5 py-2.5 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center gap-2 animate-in fade-in slide-in-from-top-1">
+          <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+          <span>{statusMessage}</span>
+        </div>
+      )}
+
       {/* Header Info & Sort Controls */}
       <div className="flex items-center justify-between mb-3 px-1">
         <div className="flex items-center gap-2 text-xs text-neutral-400">
@@ -91,7 +291,7 @@ export const SongsList: React.FC<SongsListProps> = ({
             {filteredAndSortedSongs.length} {filteredAndSortedSongs.length === 1 ? 'Track' : 'Tracks'}
           </span>
           {searchQuery && (
-            <span className="text-neutral-400">matching "{searchQuery}"</span>
+            <span className="text-emerald-400 font-medium">matching "{searchQuery}"</span>
           )}
         </div>
 
@@ -165,7 +365,9 @@ export const SongsList: React.FC<SongsListProps> = ({
                       }`}
                     >
                       <span>{opt.label}</span>
-                      {sortBy === opt.id && <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: theme.accent }} />}
+                      {sortBy === opt.id && (
+                        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: theme.accent }} />
+                      )}
                     </button>
                   ))}
                 </div>
@@ -177,7 +379,7 @@ export const SongsList: React.FC<SongsListProps> = ({
 
       {/* Songs List Items */}
       <div className="space-y-1.5">
-        {filteredAndSortedSongs.map((song, index) => {
+        {filteredAndSortedSongs.map((song) => {
           const isThisPlaying = currentSong?.id === song.id;
           return (
             <div
@@ -272,27 +474,53 @@ export const SongsList: React.FC<SongsListProps> = ({
           );
         })}
 
+        {/* Empty State */}
         {filteredAndSortedSongs.length === 0 && (
-          <div className="py-16 text-center text-neutral-400">
-            <Music className="w-12 h-12 mx-auto mb-3 text-neutral-600" />
-            <p className="text-base font-semibold text-neutral-200">No tracks found</p>
-            <p className="text-xs text-neutral-500 mt-1">Try a different search query or import audio files</p>
+          <div className="py-12 text-center text-neutral-400 space-y-4 max-w-md mx-auto px-4">
+            <div className="w-16 h-16 mx-auto rounded-3xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shadow-xl">
+              <Music className="w-8 h-8" />
+            </div>
+            <div>
+              <p className="text-base font-bold text-neutral-200">
+                {searchQuery ? `No results for "${searchQuery}"` : 'No Songs Found'}
+              </p>
+              <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
+                {searchQuery
+                  ? 'Try searching with another keyword or clear the search.'
+                  : 'No audio tracks found on this device.'}
+              </p>
+            </div>
+
+            <div className="flex items-center justify-center gap-3 pt-2">
+              {searchQuery && (
+                <button
+                  id="empty-songs-clear-search-btn"
+                  onClick={() => onSearchChange?.('')}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-bold text-white transition-all cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                  <span>Clear Search</span>
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>
 
-      {/* Floating Action Button for Shuffle All (Pulsar green FAB) */}
-      <div className="fixed bottom-24 right-5 z-20">
-        <button
-          id="songs-fab-shuffle-all"
-          onClick={handleShuffleAll}
-          className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-2xl transition-all transform hover:scale-110 active:scale-95 group"
-          style={{ backgroundColor: theme.accent, boxShadow: `0 8px 24px ${theme.accentGlow}` }}
-          title="Shuffle All Tracks"
-        >
-          <Shuffle className="w-6 h-6 text-white group-hover:rotate-12 transition-transform" />
-        </button>
-      </div>
+      {/* Floating Action Button for Shuffle All */}
+      {filteredAndSortedSongs.length > 0 && (
+        <div className="fixed bottom-24 right-5 z-20">
+          <button
+            id="songs-fab-shuffle-all"
+            onClick={handleShuffleAll}
+            className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-2xl transition-all transform hover:scale-110 active:scale-95 group"
+            style={{ backgroundColor: theme.accent, boxShadow: `0 8px 24px ${theme.accentGlow}` }}
+            title="Shuffle All Tracks"
+          >
+            <Shuffle className="w-6 h-6 text-white group-hover:rotate-12 transition-transform" />
+          </button>
+        </div>
+      )}
     </div>
   );
 };
