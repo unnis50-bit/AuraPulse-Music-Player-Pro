@@ -31,10 +31,11 @@ jobs:
           npm install --legacy-peer-deps
           npm run build
           npm install -D @capacitor/cli @capacitor/android
+          npx cap init "AuraPulse Music" "com.aurapulse.musicplayer" --web-dir dist
           npx cap add android || true
           npx cap sync android
 
-      - name: Build Debug APK with Gradle
+      - name: Fix Permissions & Build Debug APK with Gradle
         run: |
           cd android
           chmod +x gradlew
