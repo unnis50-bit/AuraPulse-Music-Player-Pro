@@ -26,22 +26,24 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install NPM Dependencies & Build Web App
+      - name: Install Dependencies & Build Web Project
         run: |
           npm install --legacy-peer-deps
           npm run build
-          npm install -D @capacitor/cli @capacitor/android
-          npx cap init "AuraPulse Music" "com.aurapulse.musicplayer" --web-dir dist
+          npm install @capacitor/core @capacitor/cli @capacitor/android
+
+      - name: Create Native Android Platform
+        run: |
           npx cap add android || true
           npx cap sync android
 
-      - name: Fix Permissions & Build Debug APK with Gradle
+      - name: Build APK with Gradle
         run: |
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
-      - name: Upload APK Artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: AuraPulse-Music-Player-APK
