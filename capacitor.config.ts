@@ -4,7 +4,13 @@ const config = {
   webDir: 'dist',
   server: {
     androidScheme: 'https',
-    cleartext: true
+    cleartext: true,
+    allowNavigation: ['*']
+  },
+  android: {
+    allowMixedContent: true,
+    backgroundColor: '#090b0e',
+    webContentsDebuggingEnabled: false
   }
 };
 

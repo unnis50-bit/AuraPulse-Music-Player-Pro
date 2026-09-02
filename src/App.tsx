@@ -208,7 +208,13 @@ export default function App() {
           const deduplicated = deduplicateSongs(stored);
           setSongs(deduplicated);
           setQueue(deduplicated);
-          setCurrentSong((prev) => prev || deduplicated[0] || null);
+          setCurrentSong((prev) => {
+            if (prev) {
+              const match = deduplicated.find((s) => s.id === prev.id);
+              if (match) return match;
+            }
+            return deduplicated[0] || null;
+          });
         } else {
           // If no user songs saved yet, load default demo tracks so player works instantly
           const defaults = deduplicateSongs(sampleSongs);
@@ -343,19 +349,32 @@ export default function App() {
   }, [sleepTimerSeconds]);
 
   // Track switching & controls
-  const handlePlaySong = (song: Song, newQueue?: Song[]) => {
-    audioEngine.resumeContext();
+  const handlePlaySong = async (song: Song, newQueue?: Song[]) => {
+    await audioEngine.resumeContext();
     if (newQueue && newQueue.length > 0) {
       setQueue(newQueue);
     }
-    setCurrentSong(song);
+
+    let activeUrl = song.audioUrl;
+    if (!activeUrl || activeUrl.startsWith('blob:')) {
+      const storedBlob = await dbStorage.getAudioBlob(song.id);
+      if (storedBlob) {
+        activeUrl = URL.createObjectURL(storedBlob);
+      } else if (song.id.startsWith('demo-')) {
+        const defaultMatch = sampleSongs.find((d) => d.id === song.id);
+        if (defaultMatch?.audioUrl) {
+          activeUrl = defaultMatch.audioUrl;
+        }
+      }
+    }
+
+    const updatedSong = { ...song, audioUrl: activeUrl };
+    setCurrentSong(updatedSong);
     setCurrentTime(0);
     setDuration(song.duration || 180);
     setIsPlaying(true);
 
-    if (song.audioUrl) {
-      audioEngine.playTrack(song.audioUrl, 0);
-    }
+    await audioEngine.playTrack(activeUrl, 0, song.genre || 'Music', song.id);
 
     // Increase play count
     setSongs((prev) =>
@@ -363,21 +382,40 @@ export default function App() {
     );
   };
 
-  const handleTogglePlay = (e?: React.MouseEvent) => {
+  const handleTogglePlay = async (e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    audioEngine.resumeContext();
-    if (!currentSong && songs.length > 0) {
-      handlePlaySong(songs[0]);
+    await audioEngine.resumeContext();
+    const songToPlay = currentSong || songs[0] || null;
+    if (!songToPlay) return;
+
+    if (!currentSong) {
+      handlePlaySong(songToPlay);
       return;
     }
+
     if (isPlaying) {
       audioEngine.pause();
       setIsPlaying(false);
     } else {
-      if (currentSong?.audioUrl) {
-        audioEngine.playTrack(currentSong.audioUrl, currentTime);
+      let activeUrl = songToPlay.audioUrl;
+      if (!activeUrl || activeUrl.startsWith('blob:')) {
+        const storedBlob = await dbStorage.getAudioBlob(songToPlay.id);
+        if (storedBlob) {
+          activeUrl = URL.createObjectURL(storedBlob);
+          songToPlay.audioUrl = activeUrl;
+          setCurrentSong({ ...songToPlay, audioUrl: activeUrl });
+        } else if (songToPlay.id.startsWith('demo-')) {
+          const defaultMatch = sampleSongs.find((d) => d.id === songToPlay.id);
+          if (defaultMatch?.audioUrl) {
+            activeUrl = defaultMatch.audioUrl;
+            songToPlay.audioUrl = activeUrl;
+            setCurrentSong({ ...songToPlay, audioUrl: activeUrl });
+          }
+        }
       }
+
       setIsPlaying(true);
+      await audioEngine.playTrack(activeUrl, currentTime, songToPlay.genre || 'Music', songToPlay.id);
     }
   };
 

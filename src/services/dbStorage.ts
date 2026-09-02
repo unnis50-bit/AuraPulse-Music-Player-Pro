@@ -132,6 +132,22 @@ class DBStorage {
     }
   }
 
+  // Get single audio blob by songId
+  public async getAudioBlob(songId: string): Promise<Blob | undefined> {
+    try {
+      const db = await this.getDB();
+      const tx = db.transaction(STORE_AUDIO_BLOBS, 'readonly');
+      const blobStore = tx.objectStore(STORE_AUDIO_BLOBS);
+      const req = blobStore.get(songId);
+      return await new Promise<Blob | undefined>((resolve) => {
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => resolve(undefined);
+      });
+    } catch {
+      return undefined;
+    }
+  }
+
   // Delete a song and its audio blob
   public async deleteSong(songId: string): Promise<void> {
     try {

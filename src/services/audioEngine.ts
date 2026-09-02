@@ -166,13 +166,20 @@ class AudioEngine {
     this.init();
     await this.resumeContext();
 
-    const targetUrl = url || 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
+    // 1-second silent audio loop fallback so Android MediaSession notification & lock screen stay active
+    const SILENT_AUDIO_LOOP = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+    const targetUrl = url || SILENT_AUDIO_LOOP;
 
     if (this.audioElement) {
       try {
         if (targetUrl !== this.currentPlayingUrl) {
           this.currentPlayingUrl = targetUrl;
           this.audioElement.src = targetUrl;
+          if (targetUrl === SILENT_AUDIO_LOOP) {
+            this.audioElement.loop = true;
+          } else {
+            this.audioElement.loop = false;
+          }
           this.audioElement.currentTime = startTime;
         } else if (startTime > 0 && Math.abs(this.audioElement.currentTime - startTime) > 1) {
           this.audioElement.currentTime = startTime;
@@ -182,10 +189,15 @@ class AudioEngine {
         if (playPromise !== undefined) {
           await playPromise;
         }
-        return true;
       } catch (err) {
-        console.warn('Audio play error:', err);
+        console.warn('Audio play fallback:', err);
       }
+    }
+
+    if (!url) {
+      this.startProcedural(genre, songId);
+    } else {
+      this.stopProcedural();
     }
 
     return true;
