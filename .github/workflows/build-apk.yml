@@ -12,10 +12,10 @@ jobs:
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
-      - name: Set up Node.js 18
+      - name: Set up Node.js 20
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
 
       - name: Set up Java JDK 17
         uses: actions/setup-java@v4
@@ -28,21 +28,20 @@ jobs:
 
       - name: Build Web Application
         run: |
-          npm install --legacy-peer-deps
+          npm install
           npm run build
 
       - name: Setup Capacitor Native Project & Permissions
         run: |
-          npm install @capacitor/core @capacitor/cli @capacitor/android --save
-          npx cap add android || true
           npx cap sync android
+          node scripts/generate-png-icons.js || true
           node scripts/setup-android.js || true
 
       - name: Build APK via Gradle
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
