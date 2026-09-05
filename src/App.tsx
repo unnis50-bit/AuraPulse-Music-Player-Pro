@@ -283,31 +283,20 @@ export default function App() {
     };
   }, [currentSong, queue, repeatMode, isShuffle]);
 
-  // Playback control effect
+  // Playhead smooth fallback timer if procedurally synthesized without an HTML5 audio source
   useEffect(() => {
-    if (isPlaying) {
-      audioEngine.playTrack(
-        currentSong?.audioUrl,
-        currentTime,
-        currentSong?.genre || 'EDM',
-        currentSong?.id || 'song-1'
-      );
-
-      if (!currentSong?.audioUrl) {
-        // Fallback smooth timer if offline audio file
-        playheadIntervalRef.current = window.setInterval(() => {
-          setCurrentTime((prev) => {
-            const next = prev + 1;
-            if (currentSong && next >= (currentSong.duration || 180)) {
-              handleTrackEnd();
-              return 0;
-            }
-            return next;
-          });
-        }, 1000);
-      }
+    if (isPlaying && (!currentSong?.audioUrl || currentSong.audioUrl.length === 0)) {
+      playheadIntervalRef.current = window.setInterval(() => {
+        setCurrentTime((prev) => {
+          const next = prev + 1;
+          if (currentSong && next >= (currentSong.duration || 180)) {
+            handleTrackEnd();
+            return 0;
+          }
+          return next;
+        });
+      }, 1000);
     } else {
-      audioEngine.pause();
       if (playheadIntervalRef.current) {
         clearInterval(playheadIntervalRef.current);
         playheadIntervalRef.current = null;
@@ -319,7 +308,7 @@ export default function App() {
         clearInterval(playheadIntervalRef.current);
       }
     };
-  }, [isPlaying, currentSong]);
+  }, [isPlaying, currentSong?.audioUrl, currentSong?.duration]);
 
   // Sleep Timer Interval
   useEffect(() => {
@@ -398,7 +387,7 @@ export default function App() {
       setIsPlaying(false);
     } else {
       let activeUrl = songToPlay.audioUrl;
-      if (!activeUrl || activeUrl.startsWith('blob:')) {
+      if (!activeUrl) {
         const storedBlob = await dbStorage.getAudioBlob(songToPlay.id);
         if (storedBlob) {
           activeUrl = URL.createObjectURL(storedBlob);
@@ -669,7 +658,9 @@ export default function App() {
 
   // Import local audio files with permanent IndexedDB blob storage
   const handleImportSongs = async (newSongs: Song[], blobsMap?: Map<string, Blob>) => {
-    const combined = deduplicateSongs([...newSongs, ...songs]);
+    // If existing songs only contain demo tracks, remove them so user's library contains only real music
+    const nonDemoExisting = songs.filter((s) => !s.id.startsWith('demo-'));
+    const combined = deduplicateSongs([...newSongs, ...nonDemoExisting]);
     setSongs(combined);
     setQueue(combined);
     await dbStorage.saveSongsWithBlobs(combined, blobsMap);

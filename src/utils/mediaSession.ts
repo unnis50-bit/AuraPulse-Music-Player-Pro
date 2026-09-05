@@ -49,7 +49,20 @@ function createIconDataUrl(title: string, artist: string, accentColor = '#10b981
   }
 }
 
-let cachedArtworkDataUrl: string | null = null;
+export async function requestNotificationPermission(): Promise<boolean> {
+  if (typeof window !== 'undefined' && 'Notification' in window) {
+    try {
+      if (Notification.permission === 'default') {
+        const res = await Notification.requestPermission();
+        return res === 'granted';
+      }
+      return Notification.permission === 'granted';
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
 
 export function setupMediaSession(params: {
   currentSong: Song | null;
@@ -75,6 +88,11 @@ export function setupMediaSession(params: {
     return;
   }
 
+  // Request notification permission if playing so lock screen media notification shows up
+  if (isPlaying && typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission().catch(() => {});
+  }
+
   // 1. Explicitly update playback state
   try {
     navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
@@ -83,23 +101,23 @@ export function setupMediaSession(params: {
   }
 
   // 2. Register Artwork with PNG formats (Required by Android System Notifications)
-  if (!cachedArtworkDataUrl) {
-    cachedArtworkDataUrl = createIconDataUrl(currentSong.title, currentSong.artist);
-  }
-
-  const artwork: MediaImage[] = [];
-
-  if (currentSong.coverArt && currentSong.coverArt.startsWith('http')) {
-    artwork.push({
-      src: currentSong.coverArt,
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  const artwork: MediaImage[] = [
+    {
+      src: `${origin}/icon-512.png`,
       sizes: '512x512',
       type: 'image/png',
-    });
-  }
+    },
+    {
+      src: `${origin}/icon-192.png`,
+      sizes: '192x192',
+      type: 'image/png',
+    },
+  ];
 
-  if (cachedArtworkDataUrl) {
-    artwork.push({
-      src: cachedArtworkDataUrl,
+  if (currentSong.coverArt && currentSong.coverArt.startsWith('http')) {
+    artwork.unshift({
+      src: currentSong.coverArt,
       sizes: '512x512',
       type: 'image/png',
     });
@@ -111,7 +129,7 @@ export function setupMediaSession(params: {
       title: currentSong.title || 'AuraPulse Music',
       artist: currentSong.artist || 'AuraPulse Audio',
       album: currentSong.album || currentSong.folder || 'AuraPulse Library',
-      artwork: artwork.length > 0 ? artwork : undefined,
+      artwork: artwork,
     });
   } catch (err) {
     console.warn('MediaMetadata error:', err);

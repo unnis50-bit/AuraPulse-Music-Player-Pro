@@ -14,6 +14,7 @@ import {
   FolderOpen,
 } from 'lucide-react';
 import { Song, ThemeConfig } from '../types';
+import { PermissionScanBanner } from './PermissionScanBanner';
 
 interface SongsListProps {
   songs: Song[];
@@ -43,6 +44,7 @@ export const SongsList: React.FC<SongsListProps> = ({
   onOpenSongMenu,
   onImportSongs,
   onOpenFileUpload,
+  onRemoveSampleSongs,
   searchQuery,
   onSearchChange,
   theme,
@@ -273,6 +275,15 @@ export const SongsList: React.FC<SongsListProps> = ({
         onChange={(e) => e.target.files && processImportFiles(e.target.files)}
         className="hidden"
         id="native-manual-search-input"
+      />
+
+      {/* Storage & Music Permission Scan Banner (1. Automatic Search & 2. Manual Search) */}
+      <PermissionScanBanner
+        onDirectFilesSelected={(files) => processImportFiles(files)}
+        theme={theme}
+        totalSongs={songs.filter((s) => !s.id.startsWith('demo-')).length}
+        hasDemoSongs={songs.some((s) => s.id.startsWith('demo-'))}
+        onRemoveDemoSongs={onRemoveSampleSongs}
       />
 
       {/* Status / Success Toast */}
