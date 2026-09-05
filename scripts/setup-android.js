@@ -58,6 +58,73 @@ if (fs.existsSync(manifestPath)) {
   console.log('✅ Updated AndroidManifest.xml with storage, notification & foreground service permissions!');
 }
 
+// Ensure res/values files exist
+const valuesDir = path.join(resDir, 'values');
+if (!fs.existsSync(valuesDir)) {
+  fs.mkdirSync(valuesDir, { recursive: true });
+}
+
+const stringsFile = path.join(valuesDir, 'strings.xml');
+if (!fs.existsSync(stringsFile)) {
+  fs.writeFileSync(stringsFile, `<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">AuraPulse Pro</string>
+    <string name="title_activity_main">AuraPulse Pro</string>
+    <string name="package_name">com.aurapulse.musicplayer</string>
+    <string name="custom_url_scheme">com.aurapulse.musicplayer</string>
+</resources>
+`, 'utf8');
+}
+
+const colorsFile = path.join(valuesDir, 'colors.xml');
+if (!fs.existsSync(colorsFile)) {
+  fs.writeFileSync(colorsFile, `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="colorPrimary">#06b6d4</color>
+    <color name="colorPrimaryDark">#0891b2</color>
+    <color name="colorAccent">#3b82f6</color>
+    <color name="ic_launcher_background">#070d17</color>
+</resources>
+`, 'utf8');
+}
+
+const stylesFile = path.join(valuesDir, 'styles.xml');
+if (!fs.existsSync(stylesFile)) {
+  fs.writeFileSync(stylesFile, `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="AppTheme" parent="Theme.AppCompat.Light.DarkActionBar">
+        <item name="colorPrimary">@color/colorPrimary</item>
+        <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
+        <item name="colorAccent">@color/colorAccent</item>
+    </style>
+    <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+        <item name="android:background">@null</item>
+    </style>
+    <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
+        <item name="android:background">@drawable/splash</item>
+    </style>
+</resources>
+`, 'utf8');
+}
+
+// Ensure res/xml/file_paths.xml exists for FileProvider
+const xmlDir = path.join(resDir, 'xml');
+if (!fs.existsSync(xmlDir)) {
+  fs.mkdirSync(xmlDir, { recursive: true });
+}
+const filePathsFile = path.join(xmlDir, 'file_paths.xml');
+if (!fs.existsSync(filePathsFile)) {
+  fs.writeFileSync(filePathsFile, `<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <external-path name="my_images" path="." />
+    <files-path name="my_files" path="." />
+    <cache-path name="my_cache" path="." />
+</paths>
+`, 'utf8');
+}
+
 // 2. Base64 512x512 PNG Launcher Icon for AuraPulse Music Player (High-resolution, emerald-pulsar brand logo)
 // Generates launcher icons across all mipmap densities
 const mipmapDirs = [
